@@ -1,0 +1,40 @@
+.gradle/
+build/
+app/build/
+local.properties
+.env
+.idea/
+*.iml
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+build-log.txt
+test-log.txt
+
+# E2E の証跡(スクショ・uiautomator dump・logcat・実サーバー応答のダンプ)。
+# 個人環境の情報(ホームパス・tailnet の IP・接続済みプロバイダ等)が混入するため公開リポジトリには入れない。
+# 証跡の要約は docs/TEST_REPORT.md に書く。
+e2e-artifacts/
+
+# Loop harness runtime state. Regenerated every tick and useless in history: workflow-runs alone
+# is 600K after two days. The snapshots are recovery material for the CURRENT uncommitted tree,
+# which is precisely what committing makes unnecessary.
+.opencode/workflow-runs/
+.opencode/loop-snapshots/
+.opencode/loop-last-report.md
+
+# 変異ハーネスのバックアップ。**成果物ではなく実行中の作業領域**である
+# (`*_mutations.py` が毎回 `backup_all()` で上書きし、復元はここからのバイトコピーで行う)。
+#
+# コミットするとソース6ファイルの丸コピーが履歴に入り、**本体が変わるとここだけが古くなる** ——
+# grep が「もう存在しない実装」を拾い、次に読む者がどちらが本物か判断できなくなる
+# (敵対的レビュー major-1 と同型の「事実と食い違う記録」)。
+e2e-artifacts/*/mutbak/
+__pycache__/
+
+# エージェントが生成した生ログ・一時スクリプト(TEST_REPORT 所見1-5「ログ混入リスク」と同型)
+output*.txt
+generate_report.py
+e2e-artifacts/serve-lifecycle.log
+e2e-artifacts/serve-4097-*.log

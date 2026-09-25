@@ -1,0 +1,8 @@
+<resources>
+    <!--
+      `Theme.kt` の `Ink0` と `MainActivity.WINDOW_BACKGROUND_DARK` と**同じ値**。
+      3か所に散っているのは層が違うため(リソース / Compose / 起動前の Window)。
+      値を変えるときは3つとも変えること。Q6 のユニットテストが同一性を見張っている。
+    -->
+    <color name="window_background">#FF0F0F0F</color>
+</resources>

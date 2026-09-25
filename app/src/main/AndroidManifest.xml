@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- opencode serve へのHTTP接続(Tailscale経由の平文HTTPを許可するためcleartext有効) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      Q11: 設定画面の「Tailscaleを開く」ボタンで com.tailscale.ipn を照会/起動するため。
+
+      com.android.vending はレビュー major-3 の回収。API 30+ のパッケージ可視性制限下では
+      ここに宣言が無いと market:// を解決する Play ストアが「見えない」ため、
+      3段フォールバックの2段目(market://)が常に resolveActivity==null で死んでいた。
+      web フォールバック(https)は ACTION_VIEW + https の暗黙 Intent なので
+      <queries> 無しでもブラウザに解決される。
+    -->
+    <queries>
+        <package android:name="com.tailscale.ipn" />
+        <package android:name="com.android.vending" />
+        <!--
+          3段目(https)。ブラウザには「web intent を汎用に扱うアプリは常に見える」という
+          自動可視性の例外があるが、それに寄りかからず明示しておく
+          (isWebResolvable() の resolveActivity が端末差で null にならないように)。
+        -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.OpenCodeAndroid">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
