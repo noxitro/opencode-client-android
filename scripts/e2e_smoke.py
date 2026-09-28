@@ -25,13 +25,16 @@ STUB_PASSWORD = "stub-pass"
 
 
 def adb(*args, check=True, capture=True):
-    r = subprocess.run(["adb", *args], check=check, capture_output=capture, text=True)
+    # logcat には他プロセス由来の非UTF-8バイトが混ざる(実例: 0xc0 で UnicodeDecodeError)。
+    # 判定に必要なのは ASCII 部分だけなので、デコード不能バイトは置換して続行する。
+    r = subprocess.run(["adb", *args], check=check, capture_output=capture,
+                       encoding="utf-8", errors="replace")
     return r.stdout if capture else ""
 
 
 def dump(out_dir, name):
     xml = subprocess.run(["adb", "exec-out", "uiautomator", "dump", "/dev/tty"],
-                         capture_output=True, text=True).stdout
+                         capture_output=True, encoding="utf-8", errors="replace").stdout
     # `uiautomator dump /dev/tty` は XML の後ろに "UI hierchary dumped to: /dev/tty" を出す。
     # 先頭の <?xml から </hierarchy> までだけを残す(残すと ParseError で node が 0 件に見える)。
     if "<?xml" in xml:
