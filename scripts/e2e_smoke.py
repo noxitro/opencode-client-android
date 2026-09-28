@@ -131,13 +131,18 @@ def main():
         return find(x, text="スタブセッション1") is not None
     xml = dump(a.out, "05-after-health")
     if not has_stub_session(xml):
-        menu = find(xml, desc_prefix="メニューを開く")
-        if menu is not None:
-            tap(menu)
-            xml = dump(a.out, "06-drawer")
-            sessions = find(xml, text="セッション一覧") or find(xml, text="セッション")
-            if sessions is not None:
-                tap(sessions)
+        # 接続OK の下に出る「セッション一覧へ」ボタンを優先。無ければドロワー経由(drawer-sessions)。
+        go = find(xml, text="セッション一覧へ")
+        if go is not None:
+            tap(go)
+        else:
+            menu = find(xml, desc_prefix="メニューを開く")
+            if menu is not None:
+                tap(menu)
+                xml = dump(a.out, "06-drawer")
+                sessions = find(xml, desc_prefix="drawer-sessions")
+                if sessions is not None:
+                    tap(sessions)
         xml = wait_for(a.out, "07-session-list", has_stub_session, timeout=60)
     print("session list: OK")
 
