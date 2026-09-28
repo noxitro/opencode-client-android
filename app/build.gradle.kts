@@ -74,8 +74,8 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // HTTP / SSE。RESTはOkHttp直叩き+kotlinx.serialization(公式SDKはJS系のみのため)。
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("com.squareup.okhttp3:okhttp-sse:5.5.0")
     // logging-interceptor は**あえて入れない**。Basic認証ヘッダと、`GET /provider` の
     // 応答に平文で載るプロバイダのAPIキー(spec `Provider.key`)を logcat に流す唯一の経路が
     // これであり、依存として置いておくと「デバッグのために1行足す」で開いてしまう。
