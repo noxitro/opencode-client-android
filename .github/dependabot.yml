@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    # AGENTS.md: ツールチェーン(AGP / Kotlin / Gradle)は独立フェーズでしか上げない。
+    ignore:
+      - dependency-name: "com.android.application"
+      - dependency-name: "org.jetbrains.kotlin.*"

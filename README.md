@@ -34,6 +34,14 @@ gradlew.bat :app:testDebugUnitTest    # ユニットテスト
 - `local.properties` に `sdk.dir` が必要(コミットされない)
 - JDK 17 が PATH に無い場合は `gradle.properties` の `org.gradle.java.home` 行を有効にして各自の JDK を指す
 
+## CI(GitHub Actions)
+
+| ワークフロー | 内容 |
+|---|---|
+| `ci.yml` | gitleaks による秘密情報スキャン / debug APK ビルド / ユニットテスト(Robolectric)。APK とテストレポートを artifact に保存。`main` では依存グラフを送信して Dependabot alerts を有効化 |
+| `e2e.yml` | エミュレータ(API 34)を起動し、`e2e-stub/server.mjs` に接続するスモーク(`scripts/e2e_smoke.py`)。設定入力→接続テスト→セッション一覧→クラッシュ無しを adb で検証し、dump/スクショ/logcat を artifact に保存 |
+| `dependabot.yml` | Actions と Gradle 依存の週次更新。AGP / Kotlin はツールチェーン方針により対象外 |
+
 ## 開発体制
 
 フェーズゲート方式(実装→レビュー→E2Eゲート→PASSのみ次フェーズ)。手順は `HARNESS.md`、
