@@ -12,3 +12,11 @@ updates:
     ignore:
       - dependency-name: "com.android.application"
       - dependency-name: "org.jetbrains.kotlin.*"
+      # Gradle wrapper もツールチェーンの一部(Gradle 8.14.4 にピン留め)
+      - dependency-name: "gradle-wrapper"
+      # Compose BOM のメジャーは新しい Kotlin/AGP を要求する。ツールチェーン更新フェーズで一緒に上げる
+      - dependency-name: "androidx.compose:compose-bom"
+        update-types: ["version-update:semver-major"]
+      # OkHttp 5 は API 変更を伴うメジャー。移行は意図的に行う
+      - dependency-name: "com.squareup.okhttp3:*"
+        update-types: ["version-update:semver-major"]
