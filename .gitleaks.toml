@@ -1,0 +1,13 @@
+# gitleaks の設定。既定ルールに加えて、スタブ用パスワードとドキュメントのプレースホルダを許可する。
+# 実物の値は環境変数からしか読まない(AGENTS.md)。ここに実物を足してはいけない。
+[extend]
+useDefault = true
+
+[allowlist]
+description = "stub credentials and documentation placeholders"
+regexes = [
+  '''opencode:stub-pass''',
+  '''opencode:<pass>''',
+  '''opencode:\*\*\*''',
+  '''b3BlbmNvZGU6c3R1Yi1wYXNz''',
+]

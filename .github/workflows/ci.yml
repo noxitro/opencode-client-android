@@ -58,6 +58,9 @@ jobs:
     name: Dependency graph (Dependabot alerts)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Settings → Code security → Dependency graph が無効だと送信が 403 になる。
+    # ビルドの合否とは無関係なので、この job は赤にしない(有効化すれば自動で通る)。
+    continue-on-error: true
     permissions:
       contents: write
     steps:

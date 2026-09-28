@@ -32,7 +32,13 @@ def adb(*args, check=True, capture=True):
 def dump(out_dir, name):
     xml = subprocess.run(["adb", "exec-out", "uiautomator", "dump", "/dev/tty"],
                          capture_output=True, text=True).stdout
-    xml = xml[xml.find("<?xml"):] if "<?xml" in xml else xml
+    # `uiautomator dump /dev/tty` は XML の後ろに "UI hierchary dumped to: /dev/tty" を出す。
+    # 先頭の <?xml から </hierarchy> までだけを残す(残すと ParseError で node が 0 件に見える)。
+    if "<?xml" in xml:
+        xml = xml[xml.find("<?xml"):]
+    end = xml.rfind("</hierarchy>")
+    if end != -1:
+        xml = xml[: end + len("</hierarchy>")]
     with open(os.path.join(out_dir, f"{name}.xml"), "w", encoding="utf-8") as f:
         f.write(xml)
     subprocess.run(["adb", "exec-out", "screencap", "-p"], stdout=open(os.path.join(out_dir, f"{name}.png"), "wb"))
@@ -42,7 +48,8 @@ def dump(out_dir, name):
 def nodes(xml):
     try:
         return list(ET.fromstring(xml).iter("node"))
-    except ET.ParseError:
+    except ET.ParseError as e:
+        print(f"WARN: uiautomator dump did not parse: {e}", file=sys.stderr)
         return []
 
 

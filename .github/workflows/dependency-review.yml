@@ -11,6 +11,8 @@ permissions:
 jobs:
   dependency-review:
     runs-on: ubuntu-latest
+    # Dependency graph が未有効のリポジトリでは「not supported」で失敗する。有効化するまでは赤にしない。
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/dependency-review-action@v4
