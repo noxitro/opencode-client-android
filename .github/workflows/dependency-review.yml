@@ -14,7 +14,7 @@ jobs:
     # Dependency graph が未有効のリポジトリでは「not supported」で失敗する。有効化するまでは赤にしない。
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: moderate
