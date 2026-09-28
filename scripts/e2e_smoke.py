@@ -128,7 +128,10 @@ def main():
 
     # 3. session list shows the stub session (open drawer -> sessions, or auto-navigate)
     def has_stub_session(x):
-        return find(x, text="スタブセッション1") is not None
+        # 一覧のカードは content-desc `session-card:<id>:<status>` で識別する(タイトル文字列は
+        # カードにマージされ dump に text として出ないことがある)。stub は ses_stub_0001/0002 を返す。
+        return (find(x, desc_prefix="session-card:ses_stub_") is not None
+                or find(x, text="スタブセッション1") is not None)
     xml = dump(a.out, "05-after-health")
     if not has_stub_session(xml):
         # 接続OK の下に出る「セッション一覧へ」ボタンを優先。無ければドロワー経由(drawer-sessions)。
