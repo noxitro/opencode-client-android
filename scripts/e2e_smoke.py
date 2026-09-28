@@ -6,22 +6,34 @@ adb だけで動かす。手順:
   2. サーバーURL に 10.0.2.2:4098(ホスト側の stub)、パスワードに stub-pass を入力
   3. 「保存して接続テスト」→ content-desc `settings-health-ok:true/…` が出ること
   4. セッション一覧に stub の「スタブセッション1」が出ること
-  5. logcat にアプリの FATAL EXCEPTION が無いこと
+  5. そのセッションを開いてメッセージを送信 → stub が SSE で流す応答
+     (既定 `チャンク1|チャンク2|チャンク3` を同一 part に累積)が1つのバブルに揃い、
+     中断ボタン(`chat-abort:*`)が消えて idle に戻ること。stub の promptCount が +1 であること
+  6. logcat にアプリの FATAL EXCEPTION が無いこと
 
 証跡(uiautomator dump / スクショ / logcat)は --out に保存し、Actions の artifact に上げる。
 """
 import argparse
+import base64
+import json
 import os
 import re
 import subprocess
 import sys
 import time
+import urllib.request
 import xml.etree.ElementTree as ET
 
 APP_ID = "io.github.noxitro.opencodeclient"
 ACTIVITY = f"{APP_ID}/dev.opencode.android.MainActivity"
 STUB_URL = "http://10.0.2.2:4098"
 STUB_PASSWORD = "stub-pass"
+# ランナー(ホスト)側から stub の検証用エンドポイントを叩くときの URL。エミュレータ内の 10.0.2.2 と同じ stub。
+STUB_HOST_URL = "http://127.0.0.1:4098"
+CHAT_SESSION_ID = "ses_stub_0001"
+CHAT_MESSAGE = "e2e-hello"  # `adb shell input text` は非ASCIIを打てないので ASCII にする
+# stub 既定の STUB_CHUNKS を累積した最終形(e2e-stub/server.mjs の CHUNKS)。
+CHAT_REPLY = "チャンク1チャンク2チャンク3"
 
 
 def adb(*args, check=True, capture=True):
@@ -54,6 +66,24 @@ def nodes(xml):
     except ET.ParseError as e:
         print(f"WARN: uiautomator dump did not parse: {e}", file=sys.stderr)
         return []
+
+
+def contains(xml, needle):
+    """text か content-desc に needle を含むノードがあるか。
+
+    バブルは combinedClickable で子の Text がマージされるので、dump 上の text が
+    本文そのものと一致するとは限らない。部分一致で見る。
+    """
+    return any(needle in (n.get("text") or "") or needle in (n.get("content-desc") or "")
+               for n in nodes(xml))
+
+
+def stub_stats():
+    token = base64.b64encode(f"opencode:{STUB_PASSWORD}".encode()).decode()
+    req = urllib.request.Request(f"{STUB_HOST_URL}/__stub/stats",
+                                 headers={"Authorization": f"Basic {token}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.load(r)
 
 
 def center(node):
@@ -152,7 +182,34 @@ def main():
         xml = wait_for(a.out, "07-session-list", has_stub_session, timeout=60)
     print("session list: OK")
 
-    # 4. no crash
+    # 4. open the stub session and send a message; the streamed reply must land and the chat go idle
+    card = find(xml, desc_prefix=f"session-card:{CHAT_SESSION_ID}:")
+    if card is None:
+        raise SystemExit(f"session card {CHAT_SESSION_ID} not found")
+    tap(card)
+    xml = wait_for(a.out, "08-chat-open",
+                   lambda x: find(x, desc_prefix="送信") is not None
+                   and find(x, cls="android.widget.EditText") is not None
+                   and contains(x, "履歴側のアシスタント応答です"),
+                   timeout=60)
+    prompts_before = stub_stats()["promptCount"]
+    type_text(find(xml, cls="android.widget.EditText"), CHAT_MESSAGE)
+    xml = dump(a.out, "09-chat-typed")
+    send = find(xml, desc_prefix="送信")
+    if send is None or send.get("enabled") != "true":
+        raise SystemExit("send button not found or disabled after typing")
+    tap(send)
+    xml = wait_for(a.out, "10-chat-reply",
+                   lambda x: contains(x, CHAT_REPLY)
+                   and contains(x, CHAT_MESSAGE)
+                   and find(x, desc_prefix="chat-abort:") is None,
+                   timeout=90)
+    prompts_after = stub_stats()["promptCount"]
+    if prompts_after != prompts_before + 1:
+        raise SystemExit(f"stub promptCount {prompts_before} -> {prompts_after}, expected +1")
+    print(f"chat: sent {CHAT_MESSAGE!r}, reply {CHAT_REPLY!r}, promptCount {prompts_before}->{prompts_after}")
+
+    # 5. no crash
     log = adb("logcat", "-d")
     with open(os.path.join(a.out, "logcat.txt"), "w", encoding="utf-8") as f:
         f.write(log)
