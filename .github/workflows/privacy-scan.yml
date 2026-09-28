@@ -1,0 +1,34 @@
+name: Privacy scan
+
+# 個人情報・秘密情報・禁止ファイルの混入を止める最前線。
+# 速いので push / PR の両方で毎回走らせ、main のルールセットで必須チェックにする。
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  privacy-scan:
+    name: Privacy scan (tree)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan tracked files for personal / secret data
+        run: python3 scripts/privacy_scan.py
+
+  gitleaks-history:
+    name: Secret scan (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

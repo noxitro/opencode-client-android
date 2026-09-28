@@ -6,6 +6,7 @@
 >
 > **This is an unofficial client.** It is not affiliated with, endorsed by, or supported by the
 > opencode project. The name "opencode" is used only to refer to the server software it connects to.
+> It is also a separate project from the community app "opencode-mobile".
 
 [opencode](https://opencode.ai) (`opencode serve`) をAndroid端末から操作するクライアント。
 Tailscale 等のプライベートネットワーク経由で自宅PCの opencode サーバーに接続する。
@@ -38,9 +39,21 @@ gradlew.bat :app:testDebugUnitTest    # ユニットテスト
 
 | ワークフロー | 内容 |
 |---|---|
-| `ci.yml` | gitleaks による秘密情報スキャン / debug APK ビルド / ユニットテスト(Robolectric)。APK とテストレポートを artifact に保存。`main` では依存グラフを送信して Dependabot alerts を有効化 |
+| `privacy-scan.yml` | **個人情報・秘密情報の混入検査。** `scripts/privacy_scan.py`(ホームパス / メール / プライベート IP / tailnet / 証跡・ログ・APK ファイル)と gitleaks の全履歴スキャン。速いので毎 push で走る |
+| `ci.yml` | debug APK ビルド / ユニットテスト(Robolectric)。APK とテストレポートを artifact に保存。`main` では依存グラフを送信して Dependabot alerts を有効化 |
 | `e2e.yml` | エミュレータ(API 34)を起動し、`e2e-stub/server.mjs` に接続するスモーク(`scripts/e2e_smoke.py`)。設定入力→接続テスト→セッション一覧→クラッシュ無しを adb で検証し、dump/スクショ/logcat を artifact に保存 |
+| `codeql.yml` | CodeQL(java-kotlin, security-and-quality)。`main` への push / PR / 週次 |
+| `dependency-review.yml` | PR で増える依存の脆弱性とライセンス(コピーレフト拒否)を検査 |
 | `dependabot.yml` | Actions と Gradle 依存の週次更新。AGP / Kotlin はツールチェーン方針により対象外 |
+
+手元でも同じ検査ができる: `python3 scripts/privacy_scan.py`
+
+### リポジトリ設定(Actions では設定できないもの)
+
+- **Settings → Rules → Rulesets → Import**: `.github/rulesets/protect-default-branch.json`
+  (削除・force-push 禁止、PR 必須)。必須チェックに `Privacy scan (tree)` と `Build + unit tests` を足す
+- **Settings → Code security**: Secret scanning、Push protection、Dependabot alerts、
+  Private vulnerability reporting を有効にする
 
 ## 開発体制
 
