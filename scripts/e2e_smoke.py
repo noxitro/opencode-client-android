@@ -7,7 +7,7 @@ adb だけで動かす。手順:
   3. 「保存して接続テスト」→ content-desc `settings-health-ok:true/…` が出ること
   4. セッション一覧に stub の「スタブセッション1」が出ること
   5. そのセッションを開いてメッセージを送信 → stub が SSE で流す応答
-     (既定 `チャンク1|チャンク2|チャンク3` を同一 part に累積)が1つのバブルに揃い、
+     (既定 `チャンク1|チャンク2|チャンク3` を同一 part に累積)の最終形が dump 上に現れ、
      中断ボタン(`chat-abort:*`)が消えて idle に戻ること。stub の promptCount が +1 であること
   6. logcat にアプリの FATAL EXCEPTION が無いこと
 
@@ -82,8 +82,13 @@ def stub_stats():
     token = base64.b64encode(f"opencode:{STUB_PASSWORD}".encode()).decode()
     req = urllib.request.Request(f"{STUB_HOST_URL}/__stub/stats",
                                  headers={"Authorization": f"Basic {token}"})
-    with urllib.request.urlopen(req, timeout=10) as r:
-        return json.load(r)
+    # ランナーに http_proxy が設定されていても 127.0.0.1 は直接叩く。
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(req, timeout=10) as r:
+            return json.load(r)
+    except OSError as e:
+        raise SystemExit(f"stub stats unreachable at {STUB_HOST_URL}: {e}")
 
 
 def center(node):
@@ -194,11 +199,13 @@ def main():
                    timeout=60)
     prompts_before = stub_stats()["promptCount"]
     type_text(find(xml, cls="android.widget.EditText"), CHAT_MESSAGE)
-    xml = dump(a.out, "09-chat-typed")
-    send = find(xml, desc_prefix="送信")
-    if send is None or send.get("enabled") != "true":
-        raise SystemExit("send button not found or disabled after typing")
-    tap(send)
+
+    # 送信ボタンは draft が空でなくなった後の再描画で enabled になる。1回の dump で決めない。
+    def send_enabled(x):
+        s = find(x, desc_prefix="送信")
+        return s is not None and s.get("enabled") == "true"
+    xml = wait_for(a.out, "09-chat-typed", send_enabled, timeout=30)
+    tap(find(xml, desc_prefix="送信"))
     xml = wait_for(a.out, "10-chat-reply",
                    lambda x: contains(x, CHAT_REPLY)
                    and contains(x, CHAT_MESSAGE)
