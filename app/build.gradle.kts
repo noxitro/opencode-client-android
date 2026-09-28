@@ -91,7 +91,7 @@ dependencies {
     //    **1つも動かさない**。ツールチェーンにも触れない
     //  - コードフェンスの言語ラベルは既定コンポーネントに無いので `markdownComponents(codeFence=…)`
     //    で差し替える(ui/MarkdownBlock.kt)
-    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.26.0")
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.45.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 
