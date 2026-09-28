@@ -81,7 +81,7 @@ dependencies {
     // これであり、依存として置いておくと「デバッグのために1行足す」で開いてしまう。
     // 「付けない」を注釈ではなく**クラスパスに存在しないこと**で守る。
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     // Q2: Markdown描画。CommonMark+GFMのパースは JetBrains の org.intellij.markdown
     // (このライブラリの推移的依存)が行い、Compose側の描画だけを差し替えられる。
