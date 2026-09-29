@@ -12,12 +12,19 @@ adb だけで動かす。手順:
   6. logcat にアプリの FATAL EXCEPTION が無いこと
 
 証跡(uiautomator dump / スクショ / logcat)は --out に保存し、Actions の artifact に上げる。
+
+`--live` は Tailscale 経由の実物 serve 用(`.github/workflows/e2e-live.yml`)。手順 2〜4 と 6 だけを行い、
+**チャット送信(5)はしない**(LLM 費用が掛かるため)。URL とパスワードは引数/環境変数から受け取り、
+ソースには書かない。セッション一覧は「カードが1枚以上」か「空状態 sessions-empty」を成功とし、
+`sessions-unauthorized` / `sessions-failed` の空状態は即失敗にする。live の証跡は tailnet のホスト名や
+アドレスを含むので、ワークフロー側で artifact に上げない。
 """
 import argparse
 import base64
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -129,7 +136,9 @@ def tap(node):
 
 def type_text(node, text):
     tap(node)
-    adb("shell", "input", "text", text)
+    # `adb shell` は引数をデバイス側の sh に渡すので、記号入りのパスワードでも壊れないよう quote する。
+    # `input text` は空白を打てないので %s に置き換える(`input` の仕様)。
+    adb("shell", "input", "text", shlex.quote(text.replace(" ", "%s")))
     time.sleep(0.5)
 
 
@@ -137,8 +146,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apk", required=True)
     ap.add_argument("--out", default="e2e-artifacts/ci")
+    ap.add_argument("--server-url", default=STUB_URL,
+                    help="アプリに入力するサーバーURL(既定: エミュレータから見たホスト上の stub)")
+    ap.add_argument("--password-env", default=None,
+                    help="パスワードを読む環境変数名。未指定なら stub のダミーパスワード")
+    ap.add_argument("--live", action="store_true",
+                    help="実物 serve 相手。チャット送信と stub 前提の確認をしない")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
+    if a.password_env:
+        password = os.environ.get(a.password_env, "")
+        if not password:
+            raise SystemExit(f"environment variable {a.password_env} is empty")
+    else:
+        password = STUB_PASSWORD
 
     adb("wait-for-device")
     adb("shell", "settings", "put", "global", "window_animation_scale", "0")
@@ -148,9 +169,9 @@ def main():
 
     # 1. settings screen on first launch (two EditTexts: URL, password)
     xml = wait_for(a.out, "01-launch", lambda x: find(x, cls="android.widget.EditText", index=1) is not None)
-    type_text(find(xml, cls="android.widget.EditText", index=0), STUB_URL)
+    type_text(find(xml, cls="android.widget.EditText", index=0), a.server_url)
     xml = dump(a.out, "02-url-typed")
-    type_text(find(xml, cls="android.widget.EditText", index=1), STUB_PASSWORD)
+    type_text(find(xml, cls="android.widget.EditText", index=1), password)
     adb("shell", "input", "keyevent", "111")  # ESC: hide IME
     time.sleep(0.5)
     xml = dump(a.out, "03-password-typed")
@@ -170,6 +191,17 @@ def main():
         # カードにマージされ dump に text として出ないことがある)。stub は ses_stub_0001/0002 を返す。
         return (find(x, desc_prefix="session-card:ses_stub_") is not None
                 or find(x, text="スタブセッション1") is not None)
+
+    def has_live_session_list(x):
+        # 実物 serve のセッション数は分からないので、カード1枚以上か「セッションが無い」空状態を成功とする。
+        for bad in ("empty-state:sessions-unauthorized", "empty-state:sessions-failed"):
+            if find(x, desc_prefix=bad) is not None:
+                raise SystemExit(f"session list failed: {bad}")
+        return (find(x, desc_prefix="session-card:") is not None
+                or find(x, desc_prefix="empty-state:sessions-empty") is not None)
+
+    if a.live:
+        has_stub_session = has_live_session_list
     xml = dump(a.out, "05-after-health")
     if not has_stub_session(xml):
         # 接続OK の下に出る「セッション一覧へ」ボタンを優先。無ければドロワー経由(drawer-sessions)。
@@ -187,7 +219,13 @@ def main():
         xml = wait_for(a.out, "07-session-list", has_stub_session, timeout=60)
     print("session list: OK")
 
+    if a.live:
+        cards = sum(1 for n in nodes(xml) if (n.get("content-desc") or "").startswith("session-card:"))
+        print(f"live: session cards visible: {cards} (chat send skipped: no LLM usage)")
+
     # 4. open the stub session and send a message; the streamed reply must land and the chat go idle
+    if a.live:
+        return finish(a.out)
     card = find(xml, desc_prefix=f"session-card:{CHAT_SESSION_ID}:")
     if card is None:
         raise SystemExit(f"session card {CHAT_SESSION_ID} not found")
@@ -216,9 +254,13 @@ def main():
         raise SystemExit(f"stub promptCount {prompts_before} -> {prompts_after}, expected +1")
     print(f"chat: sent {CHAT_MESSAGE!r}, reply {CHAT_REPLY!r}, promptCount {prompts_before}->{prompts_after}")
 
+    finish(a.out)
+
+
+def finish(out_dir):
     # 5. no crash
     log = adb("logcat", "-d")
-    with open(os.path.join(a.out, "logcat.txt"), "w", encoding="utf-8") as f:
+    with open(os.path.join(out_dir, "logcat.txt"), "w", encoding="utf-8") as f:
         f.write(log)
     if re.search(rf"FATAL EXCEPTION.*\n.*{re.escape(APP_ID)}", log):
         raise SystemExit("FATAL EXCEPTION found in logcat")
