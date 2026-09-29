@@ -1,0 +1,141 @@
+name: E2E live (Tailscale → real opencode serve)
+
+# ユーザーと同じ経路(tailnet 越しの実物 serve)で接続テストをする。
+# **チャット送信はしない**(LLM 費用が掛かる)。やるのは health / 認証 / セッション一覧まで。
+#
+# 必要な Secrets(Settings → Environments → e2e-live の secrets。Required reviewers 推奨):
+#   TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET  Tailscale の OAuth クライアント(auth_keys スコープ、tag:ci)
+#   OPENCODE_E2E_SERVER_URL               例: http://<serve のマシン名>:4097(マシン名 / MagicDNS 名 / 100.x)
+#   OPENCODE_SERVER_PASSWORD              serve 起動時と同じ値
+# tailnet の ACL で tag:ci から serve のポートだけに到達できるようにする(docs/ENVIRONMENT.md)。
+#
+# 手動実行のみ。serve は開発機で動いているときしか居ないので、push/PR/定期実行には載せない。
+# 証跡(dump/スクショ/logcat)は tailnet のホスト名やアドレスを含むので artifact に上げない。
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live-connect:
+    name: Live connect over Tailscale
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Secrets は Environment `e2e-live` に置き、Required reviewers を付けることを推奨(docs/ENVIRONMENT.md)。
+    # Environment が無ければ初回実行時に保護なしで自動作成され、リポジトリの Secrets がそのまま使われる。
+    environment: e2e-live
+    env:
+      OPENCODE_E2E_SERVER_URL: ${{ secrets.OPENCODE_E2E_SERVER_URL }}
+      OPENCODE_SERVER_PASSWORD: ${{ secrets.OPENCODE_SERVER_PASSWORD }}
+    steps:
+      - name: Check required secrets
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        run: |
+          missing=0
+          for v in TS_OAUTH_CLIENT_ID TS_OAUTH_SECRET OPENCODE_E2E_SERVER_URL OPENCODE_SERVER_PASSWORD; do
+            if [ -z "${!v}" ]; then echo "::error::secret $v is not set"; missing=1; fi
+          done
+          exit $missing
+
+      - uses: actions/checkout@v7
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      # tailnet への参加は APK ビルドの後。ランナーが tailnet に居る時間を短くする。
+      - name: Join tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      # エミュレータが MagicDNS を引けるとは限らないので、ランナー側で tailnet アドレスに解決して渡す。
+      # 経路はどちらでも同じ(ランナーの tailscale0 → serve)。
+      # **失敗時もホスト名を出さない** —— 秘密の URL の一部分は GitHub のマスク対象にならない。
+      - name: Resolve serve address on the tailnet
+        id: resolve
+        run: |
+          python3 - <<'EOF'
+          import ipaddress, os, subprocess, sys, urllib.parse
+          u = urllib.parse.urlsplit(os.environ["OPENCODE_E2E_SERVER_URL"])
+          host = u.hostname or ""
+          if host:
+              print(f"::add-mask::{host}")
+          try:
+              ip = str(ipaddress.ip_address(host))
+          except ValueError:
+              print(f"::add-mask::{host.split('.')[0]}")  # 短いマシン名も伏せる
+              # `tailscale ip` は短いマシン名か末尾ドット付き FQDN(PeerStatus.DNSName)しか引けない。
+              ip = None
+              for cand in dict.fromkeys([host, host.rstrip(".") + ".", host.split(".")[0]]):
+                  r = subprocess.run(["tailscale", "ip", "-4", cand], capture_output=True, text=True)
+                  if r.returncode == 0 and r.stdout.split():
+                      ip = r.stdout.split()[0]
+                      break
+              if ip is None:
+                  print("::error::could not resolve the serve host on the tailnet "
+                        "(is the machine online, and does the ACL let tag:ci see it?)")
+                  sys.exit(1)
+          print(f"::add-mask::{ip}")  # stdout のワークフローコマンド。以降のログで伏せる
+          # アプリは port 省略時 4097 を補う(SettingsScreen)。ランナー側も同じにする。
+          netloc = f"{ip}:{u.port or 4097}"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"url={urllib.parse.urlunsplit((u.scheme or 'http', netloc, u.path.rstrip('/'), '', ''))}\n")
+          EOF
+
+      # アプリを起動する前に、ランナーから同じ経路で serve を確かめる。
+      # 応答ボディは version 以外表示しない(AGENTS.md: エラー経路に応答ボディを載せない)。
+      - name: Connection test from the runner (health + auth)
+        env:
+          SERVE_URL: ${{ steps.resolve.outputs.url }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$SERVE_URL/global/health")
+          echo "unauthenticated GET /global/health -> $code"
+          if [ "$code" != "401" ]; then
+            echo "::error::expected 401 without credentials (serve must be started with a password), got $code"
+            exit 1
+          fi
+          body=$(curl -s -f --max-time 15 -u "opencode:$OPENCODE_SERVER_PASSWORD" "$SERVE_URL/global/health") || {
+            echo "::error::authenticated GET /global/health failed"; exit 1; }
+          python3 -c 'import json,sys; h=json.loads(sys.argv[1]); print("healthy:", h.get("healthy"), "version:", h.get("version")); sys.exit(0 if h.get("healthy") is True else 1)' "$body"
+
+      - name: Run live smoke on emulator (no chat send)
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          SERVE_URL: ${{ steps.resolve.outputs.url }}
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: python3 scripts/e2e_smoke.py --live --apk app/build/outputs/apk/debug/app-debug.apk --server-url "$SERVE_URL" --password-env OPENCODE_SERVER_PASSWORD --out "$RUNNER_TEMP/e2e-live"
