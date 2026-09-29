@@ -13,10 +13,12 @@ adb だけで動かす。手順:
 
 証跡(uiautomator dump / スクショ / logcat)は --out に保存し、Actions の artifact に上げる。
 
-`--live` は Tailscale 経由の実物 serve 用(`.github/workflows/e2e-live.yml`)。手順 2〜4 と 6 だけを行い、
+`--live` は Tailscale 経由の実物 serve 用(`.github/workflows/e2e-live.yml`)。手順 1〜4 と 6 だけを行い、
 **チャット送信(5)はしない**(LLM 費用が掛かるため)。URL とパスワードは引数/環境変数から受け取り、
 ソースには書かない。セッション一覧は「カードが1枚以上」か「空状態 sessions-empty」を成功とし、
-`sessions-unauthorized` / `sessions-failed` の空状態は即失敗にする。live の証跡は tailnet のホスト名や
+`sessions-unauthorized` の空状態は即失敗にする(`sessions-failed` は初回接続の一時失敗がありうるので、
+アプリの再試行を待ってタイムアウトまで粘る)。パスワードは `adb shell input text` で打つので ASCII のみ、
+`%s` を含まず `-` で始まらないこと。live の証跡は tailnet のホスト名や
 アドレスを含むので、ワークフロー側で artifact に上げない。
 """
 import argparse
@@ -46,8 +48,13 @@ CHAT_REPLY = "チャンク1チャンク2チャンク3"
 def adb(*args, check=True, capture=True):
     # logcat には他プロセス由来の非UTF-8バイトが混ざる(実例: 0xc0 で UnicodeDecodeError)。
     # 判定に必要なのは ASCII 部分だけなので、デコード不能バイトは置換して続行する。
-    r = subprocess.run(["adb", *args], check=check, capture_output=capture,
-                       encoding="utf-8", errors="replace")
+    try:
+        r = subprocess.run(["adb", *args], check=check, capture_output=capture,
+                           encoding="utf-8", errors="replace")
+    except subprocess.CalledProcessError as e:
+        # CalledProcessError は引数ごと表示する。`input text <パスワード>` を quote した形は
+        # GitHub のマスク(完全一致)に掛からないので、コマンドの先頭2語と終了コードだけにする。
+        raise SystemExit(f"adb {' '.join(args[:2])} failed (exit {e.returncode})") from None
     return r.stdout if capture else ""
 
 
@@ -194,9 +201,9 @@ def main():
 
     def has_live_session_list(x):
         # 実物 serve のセッション数は分からないので、カード1枚以上か「セッションが無い」空状態を成功とする。
-        for bad in ("empty-state:sessions-unauthorized", "empty-state:sessions-failed"):
-            if find(x, desc_prefix=bad) is not None:
-                raise SystemExit(f"session list failed: {bad}")
+        # 認証失敗は再試行しても直らないので即失敗。`sessions-failed` は待つ(docstring 参照)。
+        if find(x, desc_prefix="empty-state:sessions-unauthorized") is not None:
+            raise SystemExit("session list failed: empty-state:sessions-unauthorized")
         return (find(x, desc_prefix="session-card:") is not None
                 or find(x, desc_prefix="empty-state:sessions-empty") is not None)
 
