@@ -71,7 +71,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
 
     // 設定(サーバーURL/Basic認証パスワード)の永続化。
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.3.0")
 
     // HTTP / SSE。RESTはOkHttp直叩き+kotlinx.serialization(公式SDKはJS系のみのため)。
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
