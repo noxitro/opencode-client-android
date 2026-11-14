@@ -50,7 +50,7 @@ jobs:
       - name: Start stub opencode server
         run: |
           STUB_PORT=4098 STUB_PASSWORD=stub-pass nohup node e2e-stub/server.mjs > stub.log 2>&1 &
-          for i in $(seq 1 20); do
+          for _ in $(seq 1 20); do
             if curl -fsS -u opencode:stub-pass http://127.0.0.1:4098/global/health; then echo; break; fi
             sleep 1
           done
