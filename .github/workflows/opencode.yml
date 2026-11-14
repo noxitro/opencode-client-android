@@ -1,0 +1,41 @@
+name: opencode
+
+# Issue / PR のコメントに /oc または /opencode と書くと opencode が応答する。
+# モデルは OpenCode Zen の無料モデル。secrets.OPENCODE_API_KEY が必要。
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  opencode:
+    # 公開リポジトリなので、書き込み権限のある人のコメントだけで起動する
+    # (opencode 自身も起動後に write/admin を確認するが、ランナーを立てる前に弾く)
+    if: |
+      (contains(github.event.comment.body, '/oc') ||
+       contains(github.event.comment.body, '/opencode')) &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: opencode-${{ github.event.issue.number || github.event.pull_request.number }}
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: anomalyco/opencode/github@v1.18.33
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode/muse-spark-1.2-contributor-free
+          use_github_token: true
+          # 公開リポジトリでは既定で opencode.ai にセッションが公開されるので切る
+          share: false
